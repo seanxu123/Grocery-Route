@@ -1,0 +1,50 @@
+def get_flyer_links(driver, homepage_url):
+    driver.get(homepage_url)
+    wait = WebDriverWait(driver, 10)
+
+    flyer_class = "flyer-container"
+    flyer_links = []
+
+    try:
+        # Scroll to the bottom of the page to load all flyers
+        last_height = driver.execute_script("return document.body.scrollHeight")
+
+        while True:
+            # Wait for flyers to load
+            wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, f"a.{flyer_class}"))
+            )
+
+            # Get all flyer elements
+            flyers = driver.find_elements(By.CSS_SELECTOR, f"a.{flyer_class}")
+
+            # Extract links
+            for flyer in flyers:
+                href = flyer.get_attribute("href")
+                if href not in flyer_links:
+                    flyer_links.append(href)
+                    print(f"Flyer URL: {href}")
+
+            # Scroll down
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+            # Wait for new content to load
+            WebDriverWait(driver, 5).until(
+                lambda driver: driver.execute_script(
+                    "return document.body.scrollHeight"
+                )
+                > last_height
+            )
+
+            # Update last height and check if we have reached the bottom of the page
+            last_height = driver.execute_script("return document.body.scrollHeight")
+            if (
+                driver.execute_script("return window.innerHeight + window.scrollY")
+                >= last_height
+            ):
+                break
+
+    except Exception as e:
+        print(f"Error fetching flyer links: {str(e)}")
+
+    return flyer_links

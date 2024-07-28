@@ -6,9 +6,14 @@ from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 from googletrans import Translator
 import re
+import requests
+from PIL import Image
+from io import BytesIO
+from .cogvlm import generate_cogvlm_model, generate_name_and_price
 
+vlm_model = generate_cogvlm_model()
 
-def get_english_name(name: str) -> str:
+def get_english_name(name: str) -> str:    
     translator = Translator()
     if "|" in name:
         english_name = name.split("|")[1].strip()
@@ -24,7 +29,7 @@ def get_english_name(name: str) -> str:
 
 def setup_chrome_driver():
     chrome_options = webdriver.ChromeOptions()
-    # chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--window-size=2000,2000")
@@ -35,7 +40,33 @@ def setup_chrome_driver():
     return driver
 
 
-def fetch_item_price(driver, product_url):
+def fetch_image_from_url(url: str) -> Image:
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        image = Image.open(BytesIO(response.content))
+        return image
+    else:
+        raise Exception(f"Failed to fetch image. Status code: {response.status_code}")
+
+
+def handle_image_only_item(driver, product_url):
+    try:
+        item_image_url = driver.find_element(By.CSS_SELECTOR, 'div.item-info-image img').get_attribute('src')
+        image = fetch_image_from_url(item_image_url)
+        name, price = generate_name_and_price(vlm_model, image)
+        
+        if price is None:
+            print(f"{product_url} is not a valid item")
+            return None, None
+        
+        return name, price
+    except Exception as e:
+        print("Invalid item detected")
+        return None, None
+    
+
+def fetch_item_price(driver, product_url, name):
     driver.get(product_url)
     wait = WebDriverWait(driver, 5)
     price_class = "flipp-price"
@@ -56,17 +87,27 @@ def fetch_item_price(driver, product_url):
         )
         unit = unit_element.text.strip()
 
-        return price, unit
+        return name, price
     except (Exception, TimeoutException):
-        print(f"Error fetching product price for item: {product_url}")
-        return None, None
+        #print(f"Error fetching product price for item: {product_url} with name: {name}")
+        name, price = handle_image_only_item(driver, product_url)
+        if price is None:
+            return None, None
+        
+        return name, price
 
 
 def extract_item_infos(driver, flyer_url):
     driver.get(flyer_url)
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CLASS_NAME, "item-container"))
-    )
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "item-container"))
+        )
+    except Exception as e:
+        print(f"Error, can't find items in flyer: {flyer_url}: {e}")
+        extract_item_infos(driver, flyer_url)
+        return
+        
     soup = BeautifulSoup(driver.page_source, "html.parser")
 
     subtitle_element = soup.find("span", class_="subtitle")
@@ -85,25 +126,24 @@ def extract_item_infos(driver, flyer_url):
     num_items = 0
     for item in items:
         item_name = item.get(name_class)
-
+        
         if item_name not in bullshit_words and item_name:
             item_name = get_english_name(item_name)
             item_id = item.get("itemid")
             item_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{item_id}?postal_code=H8Y3P2"
-            item_price, unit = fetch_item_price(driver, item_url)
+            item_name, item_price = fetch_item_price(driver, item_url, item_name)
 
             if item_price is None:
-                continue
+               continue
 
             print(
-                f"Id: {item_id}, Name: {item_name}, price: {item_price}, unit: {unit}, url: {item_url}"
+                f"Id: {item_id}, Name: {item_name}, price: {item_price}, url: {item_url}"
             )
 
             item_infos = {
                 "Id": item_id,
                 "Name": item_name,
                 "Price": item_price,
-                "Unit": unit,
             }
 
             item_infos_list.append(item_infos)
@@ -140,12 +180,13 @@ def get_all_items_infos(driver, homepage_url):
 
     num_stores = 0
     for flyer_url in flyer_urls:
+        print()
         print(f"Extracting items from flyer_url: {flyer_url}")
         extract_item_infos(driver, flyer_url)
 
         num_stores += 1
-        if num_stores == 10:
-            break
+        #if num_stores == 10:
+        #    break
 
 
 def main():
@@ -161,6 +202,7 @@ def main():
 
 def test():
     print(f"Starting scrapper ...")
+    
     homepage_url = (
         "https://flipp.com/en-ca/pierrefonds-qc/flyers/groceries?postal_code=H8Y3P2"
     )
@@ -173,5 +215,5 @@ def test():
 
 
 if __name__ == "__main__":
-    # main()
-    test()
+    main()
+    #test()

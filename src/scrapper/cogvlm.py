@@ -2,6 +2,7 @@ import torch
 from PIL import Image
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import os
+import re
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -91,12 +92,44 @@ def generate_response(
     return response
 
 
-if __name__ == "__main__":
-    model = generate_cogvlm_model()
-    image = Image.open("test_image.jpg")
+def is_valid_item(model, image):
+    price_label_prompt = "Do you see the item's price. Answer in one word with yes or no"
+    has_price_label = generate_response(model, price_label_prompt, image)
+    has_price_label = ''.join(char for char in has_price_label if char.isalpha())
+    has_price_label = has_price_label.strip().lower()
+    
+    print(f"Has price label: {has_price_label}")
+    
+    if has_price_label == "no":
+        return False
+    else:
+        return True
+    
+
+def clean_price_string(price_text):
+    match = re.search(r'\$([\d.]+)', price_text)
+    if match:
+        price = match.group(1)
+        return price
+    return price_text
+
+
+def generate_name_and_price(model, image):
     name_prompt = "What is this item in English? ANSWER IN LESS THAN 5 WORDS."
     price_prompt = "What is the price of the item in dollars? Answer in this format ($$.¢¢)"
     
     name = generate_response(model, name_prompt, image)
-    price = generate_response(model, price_prompt, image)
-    print(f"Name: {name}\n Price: {price}")
+    price_text = generate_response(model, price_prompt, image)
+    price = clean_price_string(price_text)
+    return name, price
+    
+
+if __name__ == "__main__":
+    model = generate_cogvlm_model()
+    image_paths = ["test_image.jpg", "test_image_2.jpg", "test_image_3.jpg"]
+    
+    for image_path in image_paths:
+        image = Image.open(image_path)
+        price_label_prompt = "Do you see the item's price on the image. Answer in one word with yes or no without a period"
+        has_price_label = generate_response(model, price_label_prompt, image)
+        print(f"{image_path} is a valid item: {has_price_label}")

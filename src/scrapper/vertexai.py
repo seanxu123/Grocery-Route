@@ -1,7 +1,6 @@
 from google.cloud import storage
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
-import os
 import requests
 import io
 
@@ -71,16 +70,3 @@ def get_item_name_and_price(image_url, prompt):
     item_name, price = response.split(',')
     return item_name.strip(), price.strip()
 
-
-if __name__ == '__main__':
-    image_url = "https://f.wishabi.net/page_items/348585475/1724923926/extra_large.jpg" #rice
-    image_url = "https://f.wishabi.net/page_items/348585476/1724923927/extra_large.jpg" #vermicelli
-    image_url = "https://f.wishabi.net/page_items/348585477/1724923928/extra_large.jpg" #honey
-    prompt = "Tell me the name of the item in less than 5 words. What is the price of the item (no dollar sign, just a float)? "\
-                "Directly tell me the answer, without saying the item is or the price is. "\
-                "Separate the answers with a comma."
-    
-    
-    item_name, price = get_item_name_and_price(image_url, prompt)
-    print(f"Item name: {item_name}. Price: {price}")
-    

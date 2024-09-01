@@ -7,6 +7,10 @@ from bs4 import BeautifulSoup
 from googletrans import Translator
 import re
 from .vertexai import get_item_name_and_price
+from .database import *
+import datetime
+
+engine = get_sql_engine_from_env()
 
 def get_english_name(name: str) -> str:    
     if "|" in name:
@@ -45,42 +49,35 @@ def setup_chrome_driver():
 def handle_image_only_item(driver):
     try:
         item_image_url = driver.find_element(By.CSS_SELECTOR, 'div.item-info-image img').get_attribute('src')
-        prompt ="Tell me the name of the item in less than 5 words. What is the price of the item (no dollar sign, just a float)? "\
-                "Directly tell me the answer, without saying the item is or the price is. "\
-                "Separate the answers with a comma."
-                
-        item_name, price = get_item_name_and_price(item_image_url, prompt)
+        print(f"{item_image_url} is an image only item")
+        item_name, price = get_item_name_and_price(item_image_url)
         return item_name, price
     except Exception as e:
         print(f"Could not process image: {e}")
         return None, None
     
 
-def fetch_item_price(driver, product_url, name):
+def fetch_item_price(driver, product_url):
     driver.get(product_url)
     price_class = "flipp-price"
     unit_class = ".price-text"
 
-    try:
-        wait = WebDriverWait(driver, 5)
-        element = wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, price_class))
-        )
+    
+    wait = WebDriverWait(driver, 5)
+    element = wait.until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, price_class))
+    )
 
-        price = driver.find_element(By.CSS_SELECTOR, price_class).get_attribute("value")
+    price = driver.find_element(By.CSS_SELECTOR, price_class).get_attribute("value")
 
-        unit_element = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, unit_class)
-            )  
-        )
-        unit = unit_element.text.strip()
+    unit_element = wait.until(
+        EC.presence_of_element_located(
+            (By.CSS_SELECTOR, unit_class)
+        )  
+    )
+    unit = unit_element.text.strip()
 
-        return name, price
-    except (Exception, TimeoutException):
-        print(f"{name} with url {product_url} is an image only product.")
-        item_name, price = handle_image_only_item(driver)
-        return item_name, price
+    return price
 
 
 def get_store_name(soup):
@@ -89,6 +86,11 @@ def get_store_name(soup):
         subtitle_element.get_text(strip=True) if subtitle_element else "Unknown Store"
     )
     print(f"Store name: {store_name}")
+    insert_store_chain_record(
+        chain_name=store_name,
+        table="store_chain",
+        engine=engine
+    )
     return store_name
 
 
@@ -124,14 +126,17 @@ def extract_item_infos(driver, flyer_url):
 
     num_items = 0
     for item in items:
-        item_name = get_item_name(item)
         item_id = item.get("itemid")
         item_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{item_id}?postal_code=H8Y3P2"
         
-        item_name, item_price = fetch_item_price(driver, item_url, item_name)
-
-        if item_price is None:
-            continue
+        try:
+            item_price = fetch_item_price(driver, item_url)
+            item_name = get_item_name(item)
+        except Exception as e:
+            #print(f"Product {item_url} is an image only item")
+            item_name, item_price = handle_image_only_item(driver)
+            if item_name is None:
+                continue
 
         print(f"Item id: {item_id}, Name: {item_name}, price: {item_price}, url: {item_url}")
 
@@ -146,6 +151,33 @@ def extract_item_infos(driver, flyer_url):
 
         if num_items == 2:
             break
+
+
+def parse_end_date(date_str):
+    """Parse the end date from a validity string."""
+    # Example date string: "Valid Aug 29, 2024 – Sep 4, 2024"
+    match = re.search(r'Valid \w+ \d{1,2}, \d{4} – (\w+ \d{1,2}, \d{4})', date_str)
+    if match:
+        end_date_str = match.group(1)
+        try:
+            end_date = datetime.datetime.strptime(end_date_str, "%b %d, %Y").date()
+            return end_date
+        except ValueError as e:
+            print(f"Date parsing error: {e}")
+            return None
+    return None
+
+
+def extract_flyer_end_date(item):
+    validity_element = item.find("span", class_="validity")
+    
+    if validity_element:
+        validity_text = validity_element.get_text(strip=True)
+        end_date = parse_end_date(validity_text)
+    else:
+        end_date = None
+    
+    return end_date
 
 
 def get_flyer_urls(driver, homepage_url):
@@ -163,6 +195,18 @@ def get_flyer_urls(driver, homepage_url):
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
             flyer_url = f"https://flipp.com/en-ca/pierrefonds-qc/flyer/{flyer_id}?postal_code=H8Y3P2"
+            end_date = extract_flyer_end_date(
+                item=item
+            )
+            
+            insert_flyer_record(
+                flyer_id=flyer_id,
+                flyer_url=flyer_url,
+                valid_until=end_date,
+                table="flyer",
+                engine=engine
+            )
+            
             flyer_urls.append(flyer_url)
     
     return flyer_urls
@@ -171,15 +215,10 @@ def get_flyer_urls(driver, homepage_url):
 def get_all_items_infos(driver, homepage_url):
     flyer_urls = get_flyer_urls(driver, homepage_url)
 
-    num_stores = 0
     for flyer_url in flyer_urls:
         print()
         print(f"Extracting items from flyer_url: {flyer_url}")
         extract_item_infos(driver, flyer_url)
-
-        num_stores += 1
-        #if num_stores == 10:
-        #    break
 
 
 def main():
@@ -195,4 +234,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    #test()

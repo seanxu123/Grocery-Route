@@ -1,0 +1,33 @@
+-- Store Chains
+CREATE TABLE store_chain (
+    chain_id SERIAL PRIMARY KEY,
+    chain_name VARCHAR UNIQUE
+);
+
+-- Stores
+CREATE TABLE store (
+    store_id SERIAL PRIMARY KEY,
+    address VARCHAR,
+    chain_id INT,
+    FOREIGN KEY (chain_id) REFERENCES store_chain(chain_id)
+);
+
+-- Flyers
+CREATE TABLE flyer (
+    flyer_id INT PRIMARY KEY,
+    chain_id INT,
+    valid_until TIMESTAMP,
+    flyer_url VARCHAR UNIQUE,
+    FOREIGN KEY (chain_id) REFERENCES store_chain(chain_id),
+);
+
+-- Products
+CREATE TABLE product (
+    product_id INT PRIMARY KEY,
+    product_name VARCHAR,
+    price FLOAT,
+    url VARCHAR,
+    unit VARCHAR,
+    flyer_id INT,
+    FOREIGN KEY (flyer_id) REFERENCES flyer(flyer_id)
+);

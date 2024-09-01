@@ -1,4 +1,6 @@
 grocery-route-venv/
-.txt
-.jpg
-
+*.txt
+*.jpg
+.env
+backup-repo.git/
+bfg.jar

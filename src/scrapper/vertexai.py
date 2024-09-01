@@ -137,13 +137,15 @@ def is_valid_item(image_url):
         return False
 
 
-def get_item_name_and_price(image_url):
+def get_flyer_image_infos(image_url):
     if is_valid_item(image_url):
         prompt ="Tell me the name of the item in less than 5 words. What is the price of the item (no dollar sign, just a float)? "\
                 "Directly tell me the answer, without saying the item is or the price is. "\
+                "Tell me the quantity of the item by weight, quantity, etc). Please put a space between number and symbols"\
                 "Separate the answers with a comma."
         response = generate_response(image_url, prompt)
-        item_name, price = response.split(',')
-        return item_name.strip(), price.strip()
+        item_name, price, unit = response.split(',')
+        return item_name.strip(), price.strip(), unit.strip()
     else:
-        return None, None
+        return None, None, None
+    

@@ -6,7 +6,7 @@ from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 from googletrans import Translator
 import re
-from .vertexai import get_item_name_and_price
+from .vertexai import get_flyer_image_infos
 from .database import *
 import datetime
 
@@ -50,14 +50,14 @@ def handle_image_only_item(driver):
     try:
         item_image_url = driver.find_element(By.CSS_SELECTOR, 'div.item-info-image img').get_attribute('src')
         print(f"{item_image_url} is an image only item")
-        item_name, price = get_item_name_and_price(item_image_url)
-        return item_name, price
+        item_name, price, unit = get_flyer_image_infos(item_image_url)
+        return item_name, price, unit
     except Exception as e:
         print(f"Could not process image: {e}")
-        return None, None
+        return None, None, None
     
 
-def fetch_item_price(driver, product_url):
+def fetch_item_price_and_unit(driver, product_url):
     driver.get(product_url)
     price_class = "flipp-price"
     unit_class = ".price-text"
@@ -76,22 +76,30 @@ def fetch_item_price(driver, product_url):
         )  
     )
     unit = unit_element.text.strip()
+    
+    if unit is None or unit == "":
+        unit = "each"
 
-    return price
+    return price, unit
 
 
-def get_store_name(soup):
+def get_store_chain_name(soup, flyer_url):
     subtitle_element = soup.find("span", class_="subtitle")
-    store_name = (
+    store_chain_name = (
         subtitle_element.get_text(strip=True) if subtitle_element else "Unknown Store"
     )
-    print(f"Store name: {store_name}")
-    insert_store_chain_record(
-        chain_name=store_name,
-        table="store_chain",
+    print(f"Store chain name: {store_chain_name}")
+    
+    #Assign store chain to flyer record
+    '''
+    insert_value_in_column(
+        value = store_chain_name,
+        column="store_chain",
+        table="flyer",
         engine=engine
     )
-    return store_name
+    '''
+    return store_chain_name
 
 
 def get_item_name(item):
@@ -105,7 +113,7 @@ def get_item_name(item):
     return item_name
     
 
-def extract_item_infos(driver, flyer_url):
+def extract_item_infos(driver, flyer_url, flyer_id):
     driver.get(flyer_url)
     try:
         WebDriverWait(driver, 10).until(
@@ -117,38 +125,45 @@ def extract_item_infos(driver, flyer_url):
         return
         
     soup = BeautifulSoup(driver.page_source, "html.parser")
-    store_name = get_store_name(soup)
+    get_store_chain_name(soup, flyer_url)
 
     item_class = "item-container"
     items = soup.find_all("a", class_=item_class)
 
-    item_infos_list = []
-
     num_items = 0
     for item in items:
-        item_id = item.get("itemid")
-        item_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{item_id}?postal_code=H8Y3P2"
+        product_id = item.get("itemid")
+        item_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
         
         try:
-            item_price = fetch_item_price(driver, item_url)
-            item_name = get_item_name(item)
+            price, unit = fetch_item_price_and_unit(driver, item_url)
+            product_name = get_item_name(item)
         except Exception as e:
             #print(f"Product {item_url} is an image only item")
-            item_name, item_price = handle_image_only_item(driver)
-            if item_name is None:
+            product_name, price, unit = handle_image_only_item(driver)
+            if product_name is None:
                 continue
 
-        print(f"Item id: {item_id}, Name: {item_name}, price: {item_price}, url: {item_url}")
+        print(f"product id: {product_id}, product_name: {product_name}, price: {price}, unit: {unit},  url: {item_url}")
 
-        item_infos = {
-            "Id": item_id,
-            "Name": item_name,
-            "Price": item_price,
+        product_infos = {
+            "product id": product_id,
+            "product_name": product_name,
+            "price": price,
+            "unit": unit,
+            "url": item_url,
+            "flyer_id": flyer_id
         }
+        
+        '''
+        insert_product_record(
+            product_infos=product_infos,
+            table="products",
+            engine=engine
+        )
+        '''
 
-        item_infos_list.append(item_infos)
         num_items += 1
-
         if num_items == 2:
             break
 
@@ -180,7 +195,7 @@ def extract_flyer_end_date(item):
     return end_date
 
 
-def get_flyer_urls(driver, homepage_url):
+def get_flyer_infos(driver, homepage_url):
     driver.get(homepage_url)
     WebDriverWait(driver, 5).until(
         EC.presence_of_element_located((By.TAG_NAME, "flipp-flyer-listing-item"))
@@ -190,7 +205,7 @@ def get_flyer_urls(driver, homepage_url):
     
     flyer_items = soup.find_all("flipp-flyer-listing-item")
 
-    flyer_urls = []
+    flyer_infos = []
     for item in flyer_items:
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
@@ -199,6 +214,7 @@ def get_flyer_urls(driver, homepage_url):
                 item=item
             )
             
+            '''
             insert_flyer_record(
                 flyer_id=flyer_id,
                 flyer_url=flyer_url,
@@ -206,19 +222,22 @@ def get_flyer_urls(driver, homepage_url):
                 table="flyer",
                 engine=engine
             )
+            '''
             
-            flyer_urls.append(flyer_url)
+            flyer_infos.append({"flyer_url": flyer_url, "flyer_id": flyer_id})
     
-    return flyer_urls
+    return flyer_infos
 
 
 def get_all_items_infos(driver, homepage_url):
-    flyer_urls = get_flyer_urls(driver, homepage_url)
+    flyer_infos = get_flyer_infos(driver, homepage_url)
 
-    for flyer_url in flyer_urls:
+    for flyer in flyer_infos:
         print()
+        flyer_url = flyer["flyer_url"]
+        flyer_id = flyer["flyer_id"]
         print(f"Extracting items from flyer_url: {flyer_url}")
-        extract_item_infos(driver, flyer_url)
+        extract_item_infos(driver, flyer_url, flyer_id)
 
 
 def main():

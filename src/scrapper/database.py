@@ -54,3 +54,42 @@ def insert_flyer_record(flyer_id, flyer_url, valid_until, table, engine):
             connection.commit()
     except Exception as e:
         print(f"Error adding flyer record to database: {e}")
+        
+
+def insert_value_in_column(value, column, table, engine):
+    query = text(f"""
+                 INSERT INTO {table} 
+                 ({column})
+                 VALUES (:value)
+                 """) 
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(query, {"value": value})
+            connection.commit()
+    except Exception as e:
+        print(f"Error adding chain_name record to database: {e}")
+
+
+
+def insert_product_record(product_infos, table, engine):
+    query = text(f"""
+                 INSERT INTO {table} 
+                 (product_id, product_name, price, url, unit, flyer_id)
+                 VALUES (:product_id, :product_name, :price, :url, :unit, :flyer_id)
+                 """) 
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(query, 
+                               {
+                                "product_id": product_infos["product_id"],
+                                "product_name": product_infos["product_name"],
+                                "price": product_infos["price"],
+                                "url": product_infos["url"],
+                                "unit": product_infos["unit"],
+                                "flyer+id": product_infos["flyer_id"]
+                                })
+            connection.commit()
+    except Exception as e:
+        print(f"Error adding flyer record to database: {e}")

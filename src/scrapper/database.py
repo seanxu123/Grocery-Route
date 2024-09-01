@@ -56,19 +56,24 @@ def insert_flyer_record(flyer_id, flyer_url, valid_until, table, engine):
         print(f"Error adding flyer record to database: {e}")
         
 
-def insert_value_in_column(value, column, table, engine):
+def update_flyer_store_chain_value(store_chain, flyer_id, table, engine):
     query = text(f"""
-                 INSERT INTO {table} 
-                 ({column})
-                 VALUES (:value)
+                 UPDATE {table}
+                 SET store_chain = :store_chain
+                 WHERE flyer_id = :flyer_id
                  """) 
 
     try:
         with engine.connect() as connection:
-            connection.execute(query, {"value": value})
+            connection.execute(query, 
+                               {
+                                "flyer_id": flyer_id,
+                                "store_chain": store_chain
+                               }
+                               )
             connection.commit()
     except Exception as e:
-        print(f"Error adding chain_name record to database: {e}")
+       print(f"Error updating chain_name record in database: {e}")
 
 
 
@@ -88,7 +93,7 @@ def insert_product_record(product_infos, table, engine):
                                 "price": product_infos["price"],
                                 "url": product_infos["url"],
                                 "unit": product_infos["unit"],
-                                "flyer+id": product_infos["flyer_id"]
+                                "flyer_id": product_infos["flyer_id"]
                                 })
             connection.commit()
     except Exception as e:

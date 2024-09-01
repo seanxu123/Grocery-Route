@@ -83,7 +83,7 @@ def fetch_item_price_and_unit(driver, product_url):
     return price, unit
 
 
-def get_store_chain_name(soup, flyer_url):
+def get_store_chain_name(soup, flyer_id):
     subtitle_element = soup.find("span", class_="subtitle")
     store_chain_name = (
         subtitle_element.get_text(strip=True) if subtitle_element else "Unknown Store"
@@ -91,14 +91,13 @@ def get_store_chain_name(soup, flyer_url):
     print(f"Store chain name: {store_chain_name}")
     
     #Assign store chain to flyer record
-    '''
-    insert_value_in_column(
-        value = store_chain_name,
-        column="store_chain",
+    update_flyer_store_chain_value(
+        store_chain=store_chain_name,
+        flyer_id=flyer_id,
         table="flyer",
         engine=engine
     )
-    '''
+    
     return store_chain_name
 
 
@@ -125,7 +124,7 @@ def extract_item_infos(driver, flyer_url, flyer_id):
         return
         
     soup = BeautifulSoup(driver.page_source, "html.parser")
-    get_store_chain_name(soup, flyer_url)
+    get_store_chain_name(soup, flyer_id)
 
     item_class = "item-container"
     items = soup.find_all("a", class_=item_class)
@@ -141,13 +140,13 @@ def extract_item_infos(driver, flyer_url, flyer_id):
         except Exception as e:
             #print(f"Product {item_url} is an image only item")
             product_name, price, unit = handle_image_only_item(driver)
-            if product_name is None:
+            if product_name is None or float(price) <= 0:
                 continue
 
         print(f"product id: {product_id}, product_name: {product_name}, price: {price}, unit: {unit},  url: {item_url}")
 
         product_infos = {
-            "product id": product_id,
+            "product_id": product_id,
             "product_name": product_name,
             "price": price,
             "unit": unit,
@@ -155,13 +154,13 @@ def extract_item_infos(driver, flyer_url, flyer_id):
             "flyer_id": flyer_id
         }
         
-        '''
+        
         insert_product_record(
             product_infos=product_infos,
-            table="products",
+            table="product",
             engine=engine
         )
-        '''
+        
 
         num_items += 1
         if num_items == 2:
@@ -183,8 +182,23 @@ def parse_end_date(date_str):
     return None
 
 
-def extract_flyer_end_date(item):
-    validity_element = item.find("span", class_="validity")
+def fetch_flyer_page(driver, flyer_url):
+    driver.get(flyer_url)
+    try:
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "validity"))
+        )
+    except Exception as e:
+        print(f"Error occured when fetching flyer page: {e}")
+        flyer_html = fetch_flyer_page(driver, flyer_url)
+        
+    flyer_html = BeautifulSoup(driver.page_source, "html.parser")
+    return flyer_html
+
+
+def extract_flyer_end_date(item, driver, flyer_url):
+    flyer_html = fetch_flyer_page(driver, flyer_url)
+    validity_element = flyer_html.find("span", class_="validity")
     
     if validity_element:
         validity_text = validity_element.get_text(strip=True)
@@ -210,11 +224,9 @@ def get_flyer_infos(driver, homepage_url):
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
             flyer_url = f"https://flipp.com/en-ca/pierrefonds-qc/flyer/{flyer_id}?postal_code=H8Y3P2"
-            end_date = extract_flyer_end_date(
-                item=item
-            )
+            end_date = extract_flyer_end_date(item, driver, flyer_url)      
+            print(f"Flyer id: {flyer_id}, flyer_url: {flyer_url}, end_date: {end_date}")
             
-            '''
             insert_flyer_record(
                 flyer_id=flyer_id,
                 flyer_url=flyer_url,
@@ -222,7 +234,6 @@ def get_flyer_infos(driver, homepage_url):
                 table="flyer",
                 engine=engine
             )
-            '''
             
             flyer_infos.append({"flyer_url": flyer_url, "flyer_id": flyer_id})
     

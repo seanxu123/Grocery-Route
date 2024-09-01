@@ -126,7 +126,7 @@ def generate_response(image_url, prompt):
 
 
 def is_valid_item(image_url):
-    is_valid_prompt = "Is this a flyer item with a price. Answer yes or no in lowercase without punctuation"
+    is_valid_prompt = "Is this a flyer item with a price. Seeing a percentage only doesn't count, you need to see a dollar amount. Answer yes or no in lowercase without punctuation"
     is_valid_item = generate_response(image_url, is_valid_prompt)
     print(f"Is valid item: {is_valid_item}")
     
@@ -141,11 +141,12 @@ def get_flyer_image_infos(image_url):
     if is_valid_item(image_url):
         prompt ="Tell me the name of the item in less than 5 words. What is the price of the item (no dollar sign, just a float)? "\
                 "Directly tell me the answer, without saying the item is or the price is. "\
-                "Tell me the quantity of the item by weight, quantity, etc). Please put a space between number and symbols"\
+                "Tell me the quantity of the item by weight (#lbs, #kg), quantity (2 units, 3 units, ...), each, etc). Please put a space between number and symbols"\
                 "Separate the answers with a comma."
         response = generate_response(image_url, prompt)
         item_name, price, unit = response.split(',')
         return item_name.strip(), price.strip(), unit.strip()
     else:
         return None, None, None
+
     

@@ -102,7 +102,7 @@ def get_store_chain_name(driver, flyer_url):
             EC.presence_of_element_located((By.CLASS_NAME, "item-container"))
         )
     except Exception as e:
-        print(f"Error, can't find items in flyer: {flyer_url}: {e}")
+        print(f"Error, can't find store chain name: {flyer_url}: {e}")
         get_store_chain_name(driver, flyer_url)
         return
     
@@ -223,7 +223,7 @@ def extract_flyer_end_date(item, driver, flyer_url):
     return end_date
 
 
-def get_flyer_infos(driver, homepage_url):
+def extract_flyer_infos_from_homepage(driver, homepage_url):
     driver.get(homepage_url)
     WebDriverWait(driver, 5).until(
         EC.presence_of_element_located((By.TAG_NAME, "flipp-flyer-listing-item"))
@@ -233,10 +233,13 @@ def get_flyer_infos(driver, homepage_url):
     flyer_items = soup.find_all("flipp-flyer-listing-item")
     print(f"Found {len(flyer_items)} flyers for your region.")
     
-    flyer_infos = []
     for item in flyer_items:
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
+            if flyer_exists(flyer_id=flyer_id, table="flyer", engine=engine):
+                print(f"Flyer with flyer_id {flyer_id} already exists")
+                continue
+            
             flyer_url = f"https://flipp.com/en-ca/pierrefonds-qc/flyer/{flyer_id}?postal_code=H8Y3P2"
             end_date = extract_flyer_end_date(item, driver, flyer_url)
             store_chain = get_store_chain_name(driver, flyer_url)      
@@ -251,18 +254,24 @@ def get_flyer_infos(driver, homepage_url):
                 engine=engine
             )
             
-            flyer_infos.append({"flyer_url": flyer_url, "flyer_id": flyer_id})
+            
+def get_flyer_infos(driver, homepage_url):
+    delete_old_flyers_and_products(
+        product_table="product",
+        flyer_table="flyer",
+        engine=engine
+    )
     
+    extract_flyer_infos_from_homepage(driver=driver, homepage_url=homepage_url)
+    flyer_infos = get_unretrieved_flyers(table="flyer", engine=engine)
     return flyer_infos
-
+    
 
 def get_all_items_infos(driver, homepage_url):
     flyer_infos = get_flyer_infos(driver, homepage_url)
 
-    for flyer in flyer_infos:
+    for flyer_id, flyer_url in flyer_infos:
         print()
-        flyer_url = flyer["flyer_url"]
-        flyer_id = flyer["flyer_id"]
         print(f"Extracting items from flyer_url: {flyer_url}")
         extract_item_infos(driver, flyer_url, flyer_id)
 

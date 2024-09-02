@@ -46,18 +46,18 @@ def setup_chrome_driver():
     return driver
 
 
-def get_product_image_url(driver, product_url):
-    driver.get(product_url)
-    try:
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.item-info-image img'))
-        )
-        item_image_url = driver.find_element(By.CSS_SELECTOR, 'div.item-info-image img').get_attribute('src')
-    except Exception as e:
-        print(f"Error retrieving image URL from {product_url}: {e}")
-        item_image_url = get_product_image_url(driver, product_url)
-        
-    return item_image_url
+def get_product_image_url(driver, product_url, retries=2):
+    for attempt in range(retries):
+        try:
+            driver.get(product_url)
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'div.item-info-image img'))
+            )
+            item_image_url = driver.find_element(By.CSS_SELECTOR, 'div.item-info-image img').get_attribute('src')
+            return item_image_url
+        except Exception as e:
+            print(f"Error retrieving image URL from {product_url}: {e}. Retrying ({attempt + 1}/{retries})...")
+    return None  
 
 
 def handle_image_only_item(product_image_url):
@@ -148,6 +148,8 @@ def extract_item_infos(driver, flyer_url, flyer_id, retries = 2):
     num_items = 0
     for item in items:
         product_id = item.get("itemid")
+        if product_id is None:
+            continue
         product_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
         product_image_url = get_product_image_url(driver, product_url)
         
@@ -287,13 +289,10 @@ def get_all_items_infos(driver, homepage_url):
 
 def main():
     print(f"Starting scrapper ...")
-    homepage_url = (
-        "https://flipp.com/en-ca/pierrefonds-qc/flyers/groceries?postal_code=H8Y3P2"
-    )
-
-    driver = setup_chrome_driver()
-    get_all_items_infos(driver, homepage_url)
-    driver.quit()
+    homepage_url = "https://flipp.com/en-ca/pierrefonds-qc/flyers/groceries?postal_code=H8Y3P2"
+    with setup_chrome_driver() as driver:
+        get_all_items_infos(driver, homepage_url)
+        
 
 if __name__ == "__main__":
     main()

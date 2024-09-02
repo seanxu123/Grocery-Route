@@ -9,6 +9,8 @@ import re
 from .vertexai import get_flyer_image_infos
 from .database import *
 import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 engine = get_sql_engine_from_env()
 
@@ -123,9 +125,48 @@ def get_item_name(item):
         item_name = get_english_name(item_name)
         
     return item_name
+
+
+def process_item(item, flyer_id):
+    product_id = item.get("itemid")
+    if product_id is None:
+        return False  # Skip if no product_id
+
+    driver = webdriver.Chrome()
+    product_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
+    product_image_url = get_product_image_url(driver, product_url)
+
+    try:
+        price, unit = fetch_item_price_and_unit(driver, product_url)
+        product_name = get_item_name(item)
+    except Exception:
+        product_name, price, unit = handle_image_only_item(product_image_url)
+        if product_name is None or float(price) <= 0:
+            driver.quit()
+            return False  # Skip invalid items
+        
+    print(f"Processed item - ID: {product_id}, Name: {product_name}, Price: {price}, Unit: {unit}, URL: {product_url}")
+    product_infos = {
+        "product_id": product_id,
+        "product_name": product_name,
+        "price": price,
+        "unit": unit,
+        "url": product_url,
+        "product_image_url": product_image_url,
+        "flyer_id": flyer_id
+    }
+    
+    insert_product_record(
+        product_infos=product_infos,
+        table="product",
+        engine=engine
+    )
+    
+    driver.quit()
+    return True
     
 
-def extract_item_infos(driver, flyer_url, flyer_id, retries = 2):
+def extract_item_infos(driver, flyer_url, flyer_id, retries=2):
     driver.get(flyer_url)
     try:
         WebDriverWait(driver, 10).until(
@@ -135,51 +176,24 @@ def extract_item_infos(driver, flyer_url, flyer_id, retries = 2):
         print(f"Error, can't find items in flyer: {flyer_url}: {e}")
         if retries > 0:
             retries -= 1
-            extract_item_infos(driver, flyer_url, flyer_id, retries)
+            return extract_item_infos(driver, flyer_url, flyer_id, retries)
         else:
             return False
         
     soup = BeautifulSoup(driver.page_source, "html.parser")
-
-    item_class = "item-container"
-    items = soup.find_all("a", class_=item_class)
+    items = soup.find_all("a", class_="item-container")
     print(f"Found {len(items)} from flyer {flyer_url}")
-    
+
     num_items = 0
-    for item in items:
-        product_id = item.get("itemid")
-        if product_id is None:
-            continue
-        product_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
-        product_image_url = get_product_image_url(driver, product_url)
-        
-        try:
-            price, unit = fetch_item_price_and_unit(driver, product_url)
-            product_name = get_item_name(item)
-        except Exception as e:
-            product_name, price, unit = handle_image_only_item(product_image_url)
-            if product_name is None or float(price) <= 0:
-                continue
 
-        print(f"product id: {product_id}, product_name: {product_name}, price: {price}, unit: {unit},  url: {product_url}")
-
-        product_infos = {
-            "product_id": product_id,
-            "product_name": product_name,
-            "price": price,
-            "unit": unit,
-            "url": product_url,
-            "product_image_url": product_image_url,
-            "flyer_id": flyer_id
-        }
+    # Using ThreadPoolExecutor for multithreading
+    with ThreadPoolExecutor(max_workers=5) as executor:  # Adjust max_workers based on your requirements
+        futures = {executor.submit(process_item, item, flyer_id): item for item in items}
         
-        insert_product_record(
-            product_infos=product_infos,
-            table="product",
-            engine=engine
-        )
-        
-        num_items += 1
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                num_items += 1
     
     print(f"Retrieved infos for all {num_items} items on flyer")
     return True
@@ -237,7 +251,7 @@ def extract_flyer_infos_from_homepage(driver, homepage_url):
     flyer_items = soup.find_all("flipp-flyer-listing-item")
     print(f"Found {len(flyer_items)} flyers for your region.")
     
-    for item in flyer_items:
+    for item in tqdm(flyer_items, desc = "Processing flyer items"):
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
             if flyer_exists(flyer_id=flyer_id, table="flyer", engine=engine):
@@ -274,7 +288,7 @@ def get_flyer_infos(driver, homepage_url):
 def get_all_items_infos(driver, homepage_url):
     flyer_infos = get_flyer_infos(driver, homepage_url)
 
-    for flyer_id, flyer_url in flyer_infos:
+    for flyer_id, flyer_url in tqdm(flyer_infos, desc="Processing Flyers"):
         print()
         print(f"Extracting items from flyer_url: {flyer_url}")
         if extract_item_infos(driver, flyer_url, flyer_id) == False:

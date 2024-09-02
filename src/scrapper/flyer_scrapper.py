@@ -125,7 +125,7 @@ def get_item_name(item):
     return item_name
     
 
-def extract_item_infos(driver, flyer_url, flyer_id):
+def extract_item_infos(driver, flyer_url, flyer_id, retries = 2):
     driver.get(flyer_url)
     try:
         WebDriverWait(driver, 10).until(
@@ -133,8 +133,11 @@ def extract_item_infos(driver, flyer_url, flyer_id):
         )
     except Exception as e:
         print(f"Error, can't find items in flyer: {flyer_url}: {e}")
-        extract_item_infos(driver, flyer_url)
-        return
+        if retries > 0:
+            retries -= 1
+            extract_item_infos(driver, flyer_url, flyer_id, retries)
+        else:
+            return False
         
     soup = BeautifulSoup(driver.page_source, "html.parser")
 
@@ -152,7 +155,6 @@ def extract_item_infos(driver, flyer_url, flyer_id):
             price, unit = fetch_item_price_and_unit(driver, product_url)
             product_name = get_item_name(item)
         except Exception as e:
-            #print(f"Product {item_url} is an image only item")
             product_name, price, unit = handle_image_only_item(product_image_url)
             if product_name is None or float(price) <= 0:
                 continue
@@ -175,10 +177,10 @@ def extract_item_infos(driver, flyer_url, flyer_id):
             engine=engine
         )
         
-
         num_items += 1
     
     print(f"Retrieved infos for all {num_items} items on flyer")
+    return True
 
 
 def parse_end_date(date_str):
@@ -273,7 +275,9 @@ def get_all_items_infos(driver, homepage_url):
     for flyer_id, flyer_url in flyer_infos:
         print()
         print(f"Extracting items from flyer_url: {flyer_url}")
-        extract_item_infos(driver, flyer_url, flyer_id)
+        if extract_item_infos(driver, flyer_url, flyer_id) == False:
+            continue
+            
         set_flyer_retrieved_to_true(
             flyer_id=flyer_id,
             table="flyer",

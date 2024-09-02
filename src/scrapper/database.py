@@ -154,3 +154,17 @@ def get_unretrieved_flyers(table, engine):
     except Exception as e:
         print(f"Error getting unretrieved flyers: {e}")
         return None
+
+
+def set_flyer_retrieved_to_true(flyer_id, table, engine):
+    query = text(f"""
+                 UPDATE {table} 
+                 SET retrieved = :retrieved
+                 WHERE flyer_id = :flyer_id
+                 """)
+    try:
+        with engine.connect() as connection:
+            connection.execute(query, {"retrieved": True, "flyer_id": flyer_id})
+    except Exception as e:
+        print(f"Error setting flyer retrieved value to true: {e}")
+        

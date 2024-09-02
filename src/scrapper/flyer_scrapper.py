@@ -274,6 +274,11 @@ def get_all_items_infos(driver, homepage_url):
         print()
         print(f"Extracting items from flyer_url: {flyer_url}")
         extract_item_infos(driver, flyer_url, flyer_id)
+        set_flyer_retrieved_to_true(
+            flyer_id=flyer_id,
+            table="flyer",
+            engine=engine
+        )
 
 
 def main():

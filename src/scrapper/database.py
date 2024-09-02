@@ -36,11 +36,11 @@ def insert_store_chain_record(chain_name, table, engine):
         print(f"Error adding chain_name record to database: {e}")
         
 
-def insert_flyer_record(flyer_id, flyer_url, valid_until, table, engine):
+def insert_flyer_record(flyer_id, flyer_url, valid_until, store_chain, table, engine):
     query = text(f"""
                  INSERT INTO {table} 
-                 (flyer_id, flyer_url, valid_until)
-                 VALUES (:flyer_id, :flyer_url, :valid_until)
+                 (flyer_id, flyer_url, valid_until, store_chain)
+                 VALUES (:flyer_id, :flyer_url, :valid_until, :store_chain)
                  """) 
 
     try:
@@ -49,39 +49,19 @@ def insert_flyer_record(flyer_id, flyer_url, valid_until, table, engine):
                                {
                                 "flyer_id": flyer_id,
                                 "flyer_url": flyer_url,
-                                "valid_until": valid_until
+                                "valid_until": valid_until,
+                                "store_chain": store_chain
                                 })
             connection.commit()
     except Exception as e:
         print(f"Error adding flyer record to database: {e}")
         
 
-def update_flyer_store_chain_value(store_chain, flyer_id, table, engine):
-    query = text(f"""
-                 UPDATE {table}
-                 SET store_chain = :store_chain
-                 WHERE flyer_id = :flyer_id
-                 """) 
-
-    try:
-        with engine.connect() as connection:
-            connection.execute(query, 
-                               {
-                                "flyer_id": flyer_id,
-                                "store_chain": store_chain
-                               }
-                               )
-            connection.commit()
-    except Exception as e:
-       print(f"Error updating chain_name record in database: {e}")
-
-
-
 def insert_product_record(product_infos, table, engine):
     query = text(f"""
                  INSERT INTO {table} 
-                 (product_id, product_name, price, url, unit, flyer_id)
-                 VALUES (:product_id, :product_name, :price, :url, :unit, :flyer_id)
+                 (product_id, product_name, price, url, unit, flyer_id, image_url)
+                 VALUES (:product_id, :product_name, :price, :url, :unit, :flyer_id, :image_url)
                  """) 
 
     try:
@@ -93,7 +73,8 @@ def insert_product_record(product_infos, table, engine):
                                 "price": product_infos["price"],
                                 "url": product_infos["url"],
                                 "unit": product_infos["unit"],
-                                "flyer_id": product_infos["flyer_id"]
+                                "flyer_id": product_infos["flyer_id"],
+                                "image_url": product_infos["product_image_url"]
                                 })
             connection.commit()
     except Exception as e:

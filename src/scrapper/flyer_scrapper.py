@@ -46,23 +46,35 @@ def setup_chrome_driver():
     return driver
 
 
-def handle_image_only_item(driver):
+def get_product_image_url(driver, product_url):
+    driver.get(product_url)
     try:
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.item-info-image img'))
+        )
         item_image_url = driver.find_element(By.CSS_SELECTOR, 'div.item-info-image img').get_attribute('src')
-        print(f"{item_image_url} is an image only item")
-        item_name, price, unit = get_flyer_image_infos(item_image_url)
+    except Exception as e:
+        print(f"Error retrieving image URL from {product_url}: {e}")
+        item_image_url = get_product_image_url(driver, product_url)
+        
+    return item_image_url
+
+
+def handle_image_only_item(product_image_url):
+    try:
+        print(f"{product_image_url} is an image only item")
+        item_name, price, unit = get_flyer_image_infos(product_image_url)
         return item_name, price, unit
     except Exception as e:
         print(f"Could not process image: {e}")
         return None, None, None
-    
+
 
 def fetch_item_price_and_unit(driver, product_url):
     driver.get(product_url)
     price_class = "flipp-price"
     unit_class = ".price-text"
 
-    
     wait = WebDriverWait(driver, 5)
     element = wait.until(
         EC.presence_of_element_located((By.CSS_SELECTOR, price_class))
@@ -83,21 +95,22 @@ def fetch_item_price_and_unit(driver, product_url):
     return price, unit
 
 
-def get_store_chain_name(soup, flyer_id):
+def get_store_chain_name(driver, flyer_url):
+    driver.get(flyer_url)
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "item-container"))
+        )
+    except Exception as e:
+        print(f"Error, can't find items in flyer: {flyer_url}: {e}")
+        get_store_chain_name(driver, flyer_url)
+        return
+    
+    soup = BeautifulSoup(driver.page_source, "html.parser")
     subtitle_element = soup.find("span", class_="subtitle")
     store_chain_name = (
         subtitle_element.get_text(strip=True) if subtitle_element else "Unknown Store"
     )
-    print(f"Store chain name: {store_chain_name}")
-    
-    #Assign store chain to flyer record
-    update_flyer_store_chain_value(
-        store_chain=store_chain_name,
-        flyer_id=flyer_id,
-        table="flyer",
-        engine=engine
-    )
-    
     return store_chain_name
 
 
@@ -124,36 +137,37 @@ def extract_item_infos(driver, flyer_url, flyer_id):
         return
         
     soup = BeautifulSoup(driver.page_source, "html.parser")
-    get_store_chain_name(soup, flyer_id)
 
     item_class = "item-container"
     items = soup.find_all("a", class_=item_class)
-
+    print(f"Found {len(items)} from flyer {flyer_url}")
+    
     num_items = 0
     for item in items:
         product_id = item.get("itemid")
-        item_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
+        product_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
+        product_image_url = get_product_image_url(driver, product_url)
         
         try:
-            price, unit = fetch_item_price_and_unit(driver, item_url)
+            price, unit = fetch_item_price_and_unit(driver, product_url)
             product_name = get_item_name(item)
         except Exception as e:
             #print(f"Product {item_url} is an image only item")
-            product_name, price, unit = handle_image_only_item(driver)
+            product_name, price, unit = handle_image_only_item(product_image_url)
             if product_name is None or float(price) <= 0:
                 continue
 
-        print(f"product id: {product_id}, product_name: {product_name}, price: {price}, unit: {unit},  url: {item_url}")
+        print(f"product id: {product_id}, product_name: {product_name}, price: {price}, unit: {unit},  url: {product_url}")
 
         product_infos = {
             "product_id": product_id,
             "product_name": product_name,
             "price": price,
             "unit": unit,
-            "url": item_url,
+            "url": product_url,
+            "product_image_url": product_image_url,
             "flyer_id": flyer_id
         }
-        
         
         insert_product_record(
             product_infos=product_infos,
@@ -163,8 +177,8 @@ def extract_item_infos(driver, flyer_url, flyer_id):
         
 
         num_items += 1
-        if num_items == 2:
-            break
+    
+    print(f"Retrieved infos for all {num_items} items on flyer")
 
 
 def parse_end_date(date_str):
@@ -216,21 +230,23 @@ def get_flyer_infos(driver, homepage_url):
     )
     soup = BeautifulSoup(driver.page_source, "html.parser")
 
-    
     flyer_items = soup.find_all("flipp-flyer-listing-item")
-
+    print(f"Found {len(flyer_items)} flyers for your region.")
+    
     flyer_infos = []
     for item in flyer_items:
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
             flyer_url = f"https://flipp.com/en-ca/pierrefonds-qc/flyer/{flyer_id}?postal_code=H8Y3P2"
-            end_date = extract_flyer_end_date(item, driver, flyer_url)      
-            print(f"Flyer id: {flyer_id}, flyer_url: {flyer_url}, end_date: {end_date}")
+            end_date = extract_flyer_end_date(item, driver, flyer_url)
+            store_chain = get_store_chain_name(driver, flyer_url)      
+            print(f"Flyer id: {flyer_id}, flyer_url: {flyer_url}, end_date: {end_date}, store_chain: {store_chain}")
             
             insert_flyer_record(
                 flyer_id=flyer_id,
                 flyer_url=flyer_url,
                 valid_until=end_date,
+                store_chain=store_chain,
                 table="flyer",
                 engine=engine
             )
@@ -260,7 +276,6 @@ def main():
     driver = setup_chrome_driver()
     get_all_items_infos(driver, homepage_url)
     driver.quit()
-
 
 if __name__ == "__main__":
     main()

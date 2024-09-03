@@ -132,7 +132,7 @@ def process_item(item, flyer_id):
     if product_id is None:
         return False  # Skip if no product_id
 
-    driver = webdriver.Chrome()
+    driver = setup_chrome_driver()
     product_url = f"https://flipp.com/en-ca/pierrefonds-qc/item/{product_id}?postal_code=H8Y3P2"
     product_image_url = get_product_image_url(driver, product_url)
 
@@ -187,10 +187,10 @@ def extract_item_infos(driver, flyer_url, flyer_id, retries=2):
     num_items = 0
 
     # Using ThreadPoolExecutor for multithreading
-    with ThreadPoolExecutor(max_workers=5) as executor:  # Adjust max_workers based on your requirements
+    with ThreadPoolExecutor(max_workers = 1) as executor:  # Adjust max_workers based on your requirements
         futures = {executor.submit(process_item, item, flyer_id): item for item in items}
         
-        for future in as_completed(futures):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing Items"):
             result = future.result()
             if result:
                 num_items += 1
@@ -249,13 +249,12 @@ def extract_flyer_infos_from_homepage(driver, homepage_url):
     soup = BeautifulSoup(driver.page_source, "html.parser")
 
     flyer_items = soup.find_all("flipp-flyer-listing-item")
-    print(f"Found {len(flyer_items)} flyers for your region.")
+    print(f"Found {len(flyer_items)} flyers on the homepage.")
     
-    for item in tqdm(flyer_items, desc = "Processing flyer items"):
+    for item in flyer_items:
         if item.has_attr("flyer-id"):
             flyer_id = int(item["flyer-id"])
             if flyer_exists(flyer_id=flyer_id, table="flyer", engine=engine):
-                print(f"Flyer with flyer_id {flyer_id} already exists")
                 continue
             
             flyer_url = f"https://flipp.com/en-ca/pierrefonds-qc/flyer/{flyer_id}?postal_code=H8Y3P2"
@@ -293,7 +292,8 @@ def get_all_items_infos(driver, homepage_url):
         print(f"Extracting items from flyer_url: {flyer_url}")
         if extract_item_infos(driver, flyer_url, flyer_id) == False:
             continue
-            
+        
+        print(f"Updating flyer retrieved status for flyer_id: {flyer_id}")
         set_flyer_retrieved_to_true(
             flyer_id=flyer_id,
             table="flyer",

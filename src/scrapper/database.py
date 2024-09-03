@@ -2,7 +2,7 @@ from sqlalchemy import text, create_engine
 from sqlalchemy.engine import Engine
 import os
 from dotenv import load_dotenv
-from time import datetime
+from datetime import datetime
 import pytz
 
 load_dotenv()
@@ -113,7 +113,7 @@ def delete_old_flyers_and_products(product_table, flyer_table, engine):
     try:
         with engine.connect() as connection:
             old_flyers = connection.execute(select_query, {"today": today}).fetchall()
-            old_flyer_ids = [row['flyer_id'] for row in old_flyers]
+            old_flyer_ids = [row[0] for row in old_flyers]
 
             if not old_flyer_ids:
                 print("No old flyers found.")
@@ -159,12 +159,14 @@ def get_unretrieved_flyers(table, engine):
 def set_flyer_retrieved_to_true(flyer_id, table, engine):
     query = text(f"""
                  UPDATE {table} 
-                 SET retrieved = :retrieved
+                 SET retrieved = 'true'
                  WHERE flyer_id = :flyer_id
                  """)
     try:
         with engine.connect() as connection:
-            connection.execute(query, {"retrieved": True, "flyer_id": flyer_id})
+            result = connection.execute(query, {"flyer_id": flyer_id})
+            if result.rowcount == 0:
+                print(f"No rows updated for flyer_id: {flyer_id}")
     except Exception as e:
         print(f"Error setting flyer retrieved value to true: {e}")
         
